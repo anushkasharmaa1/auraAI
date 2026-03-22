@@ -17,13 +17,13 @@ export default function GarmentCard({ garment, onUpdate }: GarmentCardProps) {
     : null;
 
   const handleWear = async () => {
-    await supabase
+    await (supabase as any)
       .from("garments")
       .update({
         wear_count: garment.wear_count + 1,
         last_worn_at: new Date().toISOString(),
         laundry_status: "dirty",
-      } as any)
+      })
       .eq("id", garment.id);
     onUpdate();
     setShowMenu(false);
