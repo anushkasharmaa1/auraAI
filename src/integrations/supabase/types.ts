@@ -14,7 +14,168 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      garments: {
+        Row: {
+          ai_tags: Json
+          brand: string | null
+          category: Database["public"]["Enums"]["garment_category"] | null
+          color: string | null
+          created_at: string
+          id: string
+          image_url: string
+          last_worn_at: string | null
+          laundry_status: Database["public"]["Enums"]["laundry_status"]
+          material: string | null
+          name: string | null
+          price: number | null
+          source_url: string | null
+          updated_at: string
+          user_id: string
+          vibes: Database["public"]["Enums"]["garment_vibe"][] | null
+          wear_count: number
+        }
+        Insert: {
+          ai_tags?: Json
+          brand?: string | null
+          category?: Database["public"]["Enums"]["garment_category"] | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          image_url: string
+          last_worn_at?: string | null
+          laundry_status?: Database["public"]["Enums"]["laundry_status"]
+          material?: string | null
+          name?: string | null
+          price?: number | null
+          source_url?: string | null
+          updated_at?: string
+          user_id: string
+          vibes?: Database["public"]["Enums"]["garment_vibe"][] | null
+          wear_count?: number
+        }
+        Update: {
+          ai_tags?: Json
+          brand?: string | null
+          category?: Database["public"]["Enums"]["garment_category"] | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          image_url?: string
+          last_worn_at?: string | null
+          laundry_status?: Database["public"]["Enums"]["laundry_status"]
+          material?: string | null
+          name?: string | null
+          price?: number | null
+          source_url?: string | null
+          updated_at?: string
+          user_id?: string
+          vibes?: Database["public"]["Enums"]["garment_vibe"][] | null
+          wear_count?: number
+        }
+        Relationships: []
+      }
+      outfit_items: {
+        Row: {
+          created_at: string
+          garment_id: string
+          id: string
+          layer_order: number
+          outfit_id: string
+        }
+        Insert: {
+          created_at?: string
+          garment_id: string
+          id?: string
+          layer_order?: number
+          outfit_id: string
+        }
+        Update: {
+          created_at?: string
+          garment_id?: string
+          id?: string
+          layer_order?: number
+          outfit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outfit_items_garment_id_fkey"
+            columns: ["garment_id"]
+            isOneToOne: false
+            referencedRelation: "garments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outfit_items_outfit_id_fkey"
+            columns: ["outfit_id"]
+            isOneToOne: false
+            referencedRelation: "outfits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      outfits: {
+        Row: {
+          created_at: string
+          formal_level: number | null
+          id: string
+          look_image_url: string | null
+          name: string | null
+          notes: string | null
+          updated_at: string
+          user_id: string
+          weather_suitable: string | null
+        }
+        Insert: {
+          created_at?: string
+          formal_level?: number | null
+          id?: string
+          look_image_url?: string | null
+          name?: string | null
+          notes?: string | null
+          updated_at?: string
+          user_id: string
+          weather_suitable?: string | null
+        }
+        Update: {
+          created_at?: string
+          formal_level?: number | null
+          id?: string
+          look_image_url?: string | null
+          name?: string | null
+          notes?: string | null
+          updated_at?: string
+          user_id?: string
+          weather_suitable?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          body_photo_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body_photo_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body_photo_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +184,25 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      garment_category:
+        | "tops"
+        | "bottoms"
+        | "outerwear"
+        | "dresses"
+        | "shoes"
+        | "accessories"
+        | "bags"
+        | "activewear"
+      garment_vibe:
+        | "corporate"
+        | "casual"
+        | "streetwear"
+        | "brunch"
+        | "evening"
+        | "athletic"
+        | "lazy_sunday"
+        | "date_night"
+      laundry_status: "clean" | "dirty" | "at_cleaners"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +329,28 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      garment_category: [
+        "tops",
+        "bottoms",
+        "outerwear",
+        "dresses",
+        "shoes",
+        "accessories",
+        "bags",
+        "activewear",
+      ],
+      garment_vibe: [
+        "corporate",
+        "casual",
+        "streetwear",
+        "brunch",
+        "evening",
+        "athletic",
+        "lazy_sunday",
+        "date_night",
+      ],
+      laundry_status: ["clean", "dirty", "at_cleaners"],
+    },
   },
 } as const
