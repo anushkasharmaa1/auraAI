@@ -30,9 +30,9 @@ export default function GarmentCard({ garment, onUpdate }: GarmentCardProps) {
   };
 
   const handleClean = async () => {
-    await supabase
+    await (supabase as any)
       .from("garments")
-      .update({ laundry_status: "clean" } as any)
+      .update({ laundry_status: "clean" })
       .eq("id", garment.id);
     onUpdate();
     setShowMenu(false);

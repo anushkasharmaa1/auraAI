@@ -100,7 +100,7 @@ export default function UploadPage() {
     try {
       const imageUrl = imagePreview || "";
 
-      const { error } = await supabase.from("garments").insert({
+      const { error } = await (supabase as any).from("garments").insert({
         user_id: user.id,
         image_url: imageUrl,
         name: tags.name,
@@ -110,7 +110,7 @@ export default function UploadPage() {
         brand: tags.brand,
         vibes: tags.vibes,
         price: price ? parseFloat(price) : null,
-      } as any);
+      });
 
       if (error) throw error;
 

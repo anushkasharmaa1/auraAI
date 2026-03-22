@@ -22,13 +22,13 @@ export default function ClosetPage() {
   }, [user]);
 
   const fetchGarments = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("garments")
       .select("*")
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setGarments(data as unknown as Garment[]);
+      setGarments(data as Garment[]);
     }
     setLoading(false);
   };
