@@ -57,7 +57,7 @@ export default function UploadPage() {
       const filePath = `${user.id}/${crypto.randomUUID()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
-        .from("garments")
+        .from("garment-images")
         .upload(filePath, imageFile);
 
       if (uploadError) {
