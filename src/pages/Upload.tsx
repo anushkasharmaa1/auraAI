@@ -1,8 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Camera, Loader2, Check, Sparkles, ScanLine, Upload as UploadIcon } from "lucide-react";
+import { Camera, Loader2, Check, Sparkles, ScanLine, Upload as UploadIcon, RotateCcw, X, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -20,41 +20,109 @@ interface AITagResult {
 }
 
 type Mode = "choose-mode" | "single" | "batch";
-type SingleStep = "choose" | "preview" | "tagging" | "review";
-type BatchStep = "capture" | "scanning" | "review";
+type SingleStep = "choose" | "preview" | "tagging" | "mannequin" | "review";
+type BatchStep = "viewfinder" | "scanning" | "review";
 
 export default function UploadPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Mode selection
   const [mode, setMode] = useState<Mode>("choose-mode");
 
   // --- Single upload state ---
   const [singleStep, setSingleStep] = useState<SingleStep>("choose");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [processedImage, setProcessedImage] = useState<string | null>(null);
   const [tags, setTags] = useState<AITagResult | null>(null);
   const [price, setPrice] = useState("");
   const [loading, setLoading] = useState(false);
 
   // --- Batch scan state ---
-  const [batchStep, setBatchStep] = useState<BatchStep>("capture");
+  const [batchStep, setBatchStep] = useState<BatchStep>("viewfinder");
   const [batchImage, setBatchImage] = useState<string | null>(null);
   const [detectedGarments, setDetectedGarments] = useState<DetectedGarment[]>([]);
   const [batchSaving, setBatchSaving] = useState(false);
 
+  // --- Camera state ---
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState(false);
+
   const resetAll = () => {
+    stopCamera();
     setMode("choose-mode");
     setSingleStep("choose");
-    setBatchStep("capture");
+    setBatchStep("viewfinder");
     setImageFile(null);
     setImagePreview(null);
+    setProcessedImage(null);
     setTags(null);
     setPrice("");
     setBatchImage(null);
     setDetectedGarments([]);
   };
+
+  // ——— Camera Logic ———
+  const startCamera = useCallback(async () => {
+    setCameraError(false);
+    setCameraReady(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play();
+          setCameraReady(true);
+        };
+      }
+    } catch {
+      console.log("Camera not available, falling back to file upload");
+      setCameraError(true);
+    }
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraReady(false);
+  }, []);
+
+  const captureFrame = useCallback((): string | null => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return null;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.9);
+  }, []);
+
+  // Start camera when entering batch viewfinder
+  useEffect(() => {
+    if (mode === "batch" && batchStep === "viewfinder") {
+      startCamera();
+    }
+    return () => {
+      if (mode !== "batch" || batchStep !== "viewfinder") {
+        // Don't stop on cleanup if still in viewfinder
+      }
+    };
+  }, [mode, batchStep, startCamera]);
+
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => stopCamera();
+  }, [stopCamera]);
 
   // ——— Single Upload Logic ———
   const handleFileSelect = useCallback((file: File) => {
@@ -94,6 +162,24 @@ export default function UploadPage() {
       } else {
         setTags(tagData as AITagResult);
       }
+
+      // Ghost Mannequin step
+      setSingleStep("mannequin");
+      try {
+        const { data: mannequinData, error: mannequinError } = await supabase.functions.invoke("ghost-mannequin", {
+          body: { imageBase64: imagePreview, garmentName: (tagData as AITagResult)?.name || "garment" },
+        });
+
+        if (!mannequinError && mannequinData?.imageBase64) {
+          setProcessedImage(mannequinData.imageBase64);
+        } else {
+          // Fallback: use original image
+          setProcessedImage(null);
+        }
+      } catch {
+        setProcessedImage(null);
+      }
+
       setSingleStep("review");
     } catch (err: any) {
       toast.error("Analysis failed: " + err.message);
@@ -107,9 +193,20 @@ export default function UploadPage() {
     if (!user || !tags) return;
     setLoading(true);
     try {
+      let finalImageUrl = imagePreview || "";
+
+      // If we have a ghost mannequin image, upload it to storage
+      if (processedImage) {
+        const blob = await fetch(processedImage).then((r) => r.blob());
+        const filePath = `${user.id}/${crypto.randomUUID()}.png`;
+        await supabase.storage.from("garment-images").upload(filePath, blob, { contentType: "image/png" });
+        const { data: urlData } = supabase.storage.from("garment-images").getPublicUrl(filePath);
+        finalImageUrl = urlData.publicUrl;
+      }
+
       const { error } = await (supabase as any).from("garments").insert({
         user_id: user.id,
-        image_url: imagePreview || "",
+        image_url: finalImageUrl,
         name: tags.name,
         category: tags.category,
         color: tags.color,
@@ -129,12 +226,20 @@ export default function UploadPage() {
   };
 
   // ——— Batch Scan Logic ———
-  const handleBatchCapture = useCallback((file: File) => {
+  const handleBatchCapture = useCallback((imageData: string) => {
+    stopCamera();
+    setBatchImage(imageData);
+    setBatchStep("scanning");
+    runBatchScan(imageData);
+  }, [stopCamera]);
+
+  const handleBatchFileUpload = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      setBatchImage(e.target?.result as string);
+      const base64 = e.target?.result as string;
+      setBatchImage(base64);
       setBatchStep("scanning");
-      runBatchScan(e.target?.result as string);
+      runBatchScan(base64);
     };
     reader.readAsDataURL(file);
   }, []);
@@ -157,7 +262,8 @@ export default function UploadPage() {
 
       if (garments.length === 0) {
         toast.error("No garments detected. Try a clearer photo.");
-        setBatchStep("capture");
+        setBatchStep("viewfinder");
+        startCamera();
         return;
       }
 
@@ -165,7 +271,8 @@ export default function UploadPage() {
       setBatchStep("review");
     } catch (err: any) {
       toast.error("Scan failed: " + err.message);
-      setBatchStep("capture");
+      setBatchStep("viewfinder");
+      startCamera();
     }
   };
 
@@ -173,7 +280,6 @@ export default function UploadPage() {
     if (!user || selected.length === 0) return;
     setBatchSaving(true);
     try {
-      // Upload the source image once
       const blob = await fetch(batchImage!).then((r) => r.blob());
       const filePath = `${user.id}/${crypto.randomUUID()}.jpg`;
       await supabase.storage.from("garment-images").upload(filePath, blob);
@@ -203,18 +309,30 @@ export default function UploadPage() {
     }
   };
 
+  const handleShutterPress = () => {
+    const frame = captureFrame();
+    if (frame) {
+      handleBatchCapture(frame);
+    }
+  };
+
   // ——— Render ———
   return (
-    <div className="max-w-lg mx-auto">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="mb-8"
-      >
-        <p className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-1 font-sans">Smart Upload</p>
-        <h1 className="text-3xl">Add to Closet</h1>
-      </motion.div>
+    <div className={mode === "batch" && batchStep === "viewfinder" ? "" : "max-w-lg mx-auto"}>
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* Only show header when not in viewfinder */}
+      {!(mode === "batch" && batchStep === "viewfinder" && !cameraError) && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="mb-8"
+        >
+          <p className="text-xs tracking-[0.2em] uppercase text-muted-foreground mb-1 font-sans">Smart Upload</p>
+          <h1 className="text-3xl">Add to Closet</h1>
+        </motion.div>
+      )}
 
       <AnimatePresence mode="wait">
         {/* ——— Mode Selection ——— */}
@@ -236,9 +354,7 @@ export default function UploadPage() {
               </div>
               <div>
                 <p className="text-sm font-sans font-medium">Single Item</p>
-                <p className="text-[10px] text-muted-foreground font-sans mt-0.5">
-                  Upload one garment
-                </p>
+                <p className="text-[10px] text-muted-foreground font-sans mt-0.5">Upload one garment</p>
               </div>
             </button>
 
@@ -251,9 +367,7 @@ export default function UploadPage() {
               </div>
               <div>
                 <p className="text-sm font-sans font-medium">Aura Lens</p>
-                <p className="text-[10px] text-muted-foreground font-sans mt-0.5">
-                  Scan multiple items
-                </p>
+                <p className="text-[10px] text-muted-foreground font-sans mt-0.5">Live camera scan</p>
               </div>
             </button>
           </motion.div>
@@ -347,6 +461,28 @@ export default function UploadPage() {
           </motion.div>
         )}
 
+        {/* ——— Single: Ghost Mannequin Processing ——— */}
+        {mode === "single" && singleStep === "mannequin" && (
+          <motion.div
+            key="single-mannequin"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col items-center justify-center py-20 gap-4"
+          >
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center">
+                <ImageIcon className="w-7 h-7 text-accent" />
+              </div>
+              <Loader2 className="absolute inset-0 w-16 h-16 animate-spin text-accent/30" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-sans font-medium">Creating ghost mannequin</p>
+              <p className="text-xs text-muted-foreground font-sans mt-1">Generating professional product photo...</p>
+            </div>
+          </motion.div>
+        )}
+
         {/* ——— Single: Review ——— */}
         {mode === "single" && singleStep === "review" && tags && (
           <motion.div
@@ -357,14 +493,26 @@ export default function UploadPage() {
             transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-6"
           >
-            {imagePreview && (
-              <div className="w-32 h-40 rounded-sm overflow-hidden bg-muted mx-auto">
-                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+            <div className="flex gap-3 items-start mx-auto w-fit">
+              {/* Show processed ghost mannequin image */}
+              <div className="w-32 h-40 rounded-sm overflow-hidden bg-white border border-border flex items-center justify-center">
+                <img
+                  src={processedImage || imagePreview || ""}
+                  alt="Ghost mannequin"
+                  className="w-full h-full object-contain"
+                />
               </div>
-            )}
+              {/* Show original for comparison if we have a processed version */}
+              {processedImage && imagePreview && (
+                <div className="w-20 h-26 rounded-sm overflow-hidden bg-muted opacity-60 relative">
+                  <img src={imagePreview} alt="Original" className="w-full h-full object-cover" />
+                  <span className="absolute bottom-0.5 left-0.5 text-[8px] font-sans bg-background/80 px-1 rounded">Original</span>
+                </div>
+              )}
+            </div>
             <div className="surface-elevated rounded-sm p-5 space-y-4">
               <div className="flex items-center gap-2 mb-3">
-                <Check className="w-4 h-4 text-success" />
+                <Check className="w-4 h-4 text-green-600" />
                 <p className="text-sm font-sans font-medium">AI Analysis Complete</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -393,43 +541,124 @@ export default function UploadPage() {
           </motion.div>
         )}
 
-        {/* ——— Batch: Capture ——— */}
-        {mode === "batch" && batchStep === "capture" && (
+        {/* ——— Batch: Live Camera Viewfinder ——— */}
+        {mode === "batch" && batchStep === "viewfinder" && (
           <motion.div
-            key="batch-capture"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            key="batch-viewfinder"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className={cameraError ? "max-w-lg mx-auto" : "fixed inset-0 z-50 bg-black flex flex-col"}
           >
-            <div
-              className="border-2 border-dashed border-accent/30 rounded-sm aspect-[4/3] flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-accent/50 transition-colors group bg-accent/[0.03]"
-              onClick={() => document.getElementById("batch-input")?.click()}
-            >
-              <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/15 transition-colors">
-                <ScanLine className="w-7 h-7 text-accent" />
+            {!cameraError ? (
+              <>
+                {/* Camera feed */}
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+
+                {/* Overlay UI */}
+                <div className="absolute inset-0 flex flex-col pointer-events-none">
+                  {/* Top bar */}
+                  <div className="flex items-center justify-between p-4 pt-12 pointer-events-auto">
+                    <button
+                      onClick={resetAll}
+                      className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white active:scale-95 transition-transform"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <ScanLine className="w-4 h-4 text-white" />
+                      <span className="text-white text-sm font-sans font-medium tracking-wide">Aura Lens</span>
+                    </div>
+                    <div className="w-10" />
+                  </div>
+
+                  {/* Center scan guide */}
+                  <div className="flex-1 flex items-center justify-center">
+                    {cameraReady && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: 0.5, duration: 0.6 }}
+                        className="text-center"
+                      >
+                        <p className="text-white/70 text-xs font-sans tracking-wide">Point at your clothing rack</p>
+                      </motion.div>
+                    )}
+                    {!cameraReady && (
+                      <Loader2 className="w-8 h-8 text-white/50 animate-spin" />
+                    )}
+                  </div>
+
+                  {/* Bottom controls */}
+                  <div className="pb-12 pt-6 flex flex-col items-center gap-4 pointer-events-auto">
+                    {/* Shutter button */}
+                    <button
+                      onClick={handleShutterPress}
+                      disabled={!cameraReady}
+                      className="w-[72px] h-[72px] rounded-full border-4 border-white flex items-center justify-center active:scale-90 transition-transform disabled:opacity-30"
+                    >
+                      <div className="w-[58px] h-[58px] rounded-full bg-white" />
+                    </button>
+                    {/* File upload fallback */}
+                    <button
+                      onClick={() => document.getElementById("batch-file-input")?.click()}
+                      className="text-white/60 text-xs font-sans hover:text-white/90 transition-colors"
+                    >
+                      Or upload from gallery
+                    </button>
+                  </div>
+                </div>
+
+                <input
+                  id="batch-file-input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleBatchFileUpload(file);
+                  }}
+                />
+              </>
+            ) : (
+              /* Desktop fallback: file upload */
+              <div>
+                <div
+                  className="border-2 border-dashed border-accent/30 rounded-sm aspect-[4/3] flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-accent/50 transition-colors group bg-accent/[0.03]"
+                  onClick={() => document.getElementById("batch-fallback-input")?.click()}
+                >
+                  <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/15 transition-colors">
+                    <ScanLine className="w-7 h-7 text-accent" />
+                  </div>
+                  <div className="text-center px-6">
+                    <p className="text-sm font-sans font-medium">Upload a photo of your rack or flat-lay</p>
+                    <p className="text-xs text-muted-foreground font-sans mt-1">
+                      Camera not available — upload an image instead
+                    </p>
+                  </div>
+                </div>
+                <input
+                  id="batch-fallback-input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleBatchFileUpload(file);
+                  }}
+                />
+                <button onClick={resetAll} className="w-full text-sm text-muted-foreground font-sans hover:text-foreground transition-colors py-3 mt-2">
+                  ← Back
+                </button>
               </div>
-              <div className="text-center px-6">
-                <p className="text-sm font-sans font-medium">Snap your rack or flat-lay</p>
-                <p className="text-xs text-muted-foreground font-sans mt-1">
-                  AI will detect and tag each garment individually
-                </p>
-              </div>
-            </div>
-            <input
-              id="batch-input"
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleBatchCapture(file);
-              }}
-            />
-            <button onClick={resetAll} className="w-full text-sm text-muted-foreground font-sans hover:text-foreground transition-colors py-3 mt-2">
-              ← Back
-            </button>
+            )}
           </motion.div>
         )}
 
@@ -440,7 +669,7 @@ export default function UploadPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex flex-col items-center justify-center py-20 gap-4"
+            className="flex flex-col items-center justify-center py-20 gap-4 max-w-lg mx-auto"
           >
             <div className="relative">
               <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center">
@@ -450,9 +679,7 @@ export default function UploadPage() {
             </div>
             <div className="text-center">
               <p className="text-sm font-sans font-medium">Scanning your closet</p>
-              <p className="text-xs text-muted-foreground font-sans mt-1">
-                Detecting garments, tagging vibes & categories...
-              </p>
+              <p className="text-xs text-muted-foreground font-sans mt-1">Detecting garments, tagging vibes & categories...</p>
             </div>
           </motion.div>
         )}
@@ -465,9 +692,10 @@ export default function UploadPage() {
             sourceImage={batchImage}
             onConfirm={handleBatchConfirm}
             onBack={() => {
-              setBatchStep("capture");
+              setBatchStep("viewfinder");
               setBatchImage(null);
               setDetectedGarments([]);
+              startCamera();
             }}
             saving={batchSaving}
           />
