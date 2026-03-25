@@ -916,7 +916,8 @@ export default function UploadPage() {
               Try a different screenshot
             </button>
           </motion.div>
-        )
+        )}
+
       </AnimatePresence>
     </div>
   );
