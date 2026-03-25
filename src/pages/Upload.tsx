@@ -317,6 +317,74 @@ export default function UploadPage() {
     }
   };
 
+  // ——— Screenshot Sync Logic ———
+  const handleScreenshotSelect = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      setScreenshotPreview(base64);
+      setScreenshotStep("extracting");
+      runScreenshotSync(base64);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const runScreenshotSync = async (base64: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("screenshot-sync", {
+        body: { imageBase64: base64 },
+      });
+      if (error) throw error;
+
+      setScreenshotTags({
+        name: data.name || "New Garment",
+        category: data.category || "tops",
+        color: data.color || "Unknown",
+        material: data.material || "Unknown",
+        brand: data.brand || "",
+        vibes: data.vibes || ["casual"],
+        price: data.price,
+        description: data.description,
+      });
+      if (data.price) setPrice(String(data.price));
+      setScreenshotStep("review");
+    } catch (err: any) {
+      toast.error("Screenshot extraction failed: " + err.message);
+      setScreenshotStep("choose");
+    }
+  };
+
+  const handleScreenshotSave = async () => {
+    if (!user || !screenshotTags) return;
+    setLoading(true);
+    try {
+      // Upload the screenshot as the garment image
+      const blob = await fetch(screenshotPreview!).then((r) => r.blob());
+      const filePath = `${user.id}/${crypto.randomUUID()}.jpg`;
+      await supabase.storage.from("garment-images").upload(filePath, blob, { contentType: "image/jpeg" });
+      const { data: urlData } = supabase.storage.from("garment-images").getPublicUrl(filePath);
+
+      const { error } = await (supabase as any).from("garments").insert({
+        user_id: user.id,
+        image_url: urlData.publicUrl,
+        name: screenshotTags.name,
+        category: screenshotTags.category,
+        color: screenshotTags.color,
+        material: screenshotTags.material,
+        brand: screenshotTags.brand,
+        vibes: screenshotTags.vibes,
+        price: price ? parseFloat(price) : null,
+      });
+      if (error) throw error;
+      toast.success("Garment synced to your closet");
+      navigate("/");
+    } catch (err: any) {
+      toast.error("Failed to save: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleShutterPress = () => {
     const frame = captureFrame();
     if (frame) {
