@@ -419,31 +419,44 @@ export default function UploadPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
             transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="grid grid-cols-2 gap-3"
+            className="grid grid-cols-3 gap-3"
           >
             <button
               onClick={() => setMode("single")}
-              className="group surface-elevated rounded-sm p-6 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-foreground/20 transition-all active:scale-[0.97]"
+              className="group surface-elevated rounded-sm p-5 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-foreground/20 transition-all active:scale-[0.97]"
             >
-              <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center group-hover:bg-muted transition-colors">
-                <Camera className="w-6 h-6 text-muted-foreground" />
+              <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center group-hover:bg-muted transition-colors">
+                <Camera className="w-5 h-5 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-sans font-medium">Single Item</p>
-                <p className="text-[10px] text-muted-foreground font-sans mt-0.5">Upload one garment</p>
+                <p className="text-xs font-sans font-medium">Single Item</p>
+                <p className="text-[9px] text-muted-foreground font-sans mt-0.5">Upload one</p>
               </div>
             </button>
 
             <button
               onClick={() => setMode("batch")}
-              className="group surface-elevated rounded-sm p-6 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-accent/40 transition-all active:scale-[0.97]"
+              className="group surface-elevated rounded-sm p-5 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-accent/40 transition-all active:scale-[0.97]"
             >
-              <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/15 transition-colors">
-                <ScanLine className="w-6 h-6 text-accent" />
+              <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/15 transition-colors">
+                <ScanLine className="w-5 h-5 text-accent" />
               </div>
               <div>
-                <p className="text-sm font-sans font-medium">Aura Lens</p>
-                <p className="text-[10px] text-muted-foreground font-sans mt-0.5">Live camera scan</p>
+                <p className="text-xs font-sans font-medium">Aura Lens</p>
+                <p className="text-[9px] text-muted-foreground font-sans mt-0.5">Camera scan</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setMode("screenshot")}
+              className="group surface-elevated rounded-sm p-5 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-primary/40 transition-all active:scale-[0.97]"
+            >
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+                <Receipt className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs font-sans font-medium">Screenshot</p>
+                <p className="text-[9px] text-muted-foreground font-sans mt-0.5">Sync a purchase</p>
               </div>
             </button>
           </motion.div>
