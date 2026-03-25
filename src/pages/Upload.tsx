@@ -61,6 +61,7 @@ export default function UploadPage() {
     setMode("choose-mode");
     setSingleStep("choose");
     setBatchStep("viewfinder");
+    setScreenshotStep("choose");
     setImageFile(null);
     setImagePreview(null);
     setProcessedImage(null);
@@ -68,6 +69,8 @@ export default function UploadPage() {
     setPrice("");
     setBatchImage(null);
     setDetectedGarments([]);
+    setScreenshotPreview(null);
+    setScreenshotTags(null);
   };
 
   // ——— Camera Logic ———
