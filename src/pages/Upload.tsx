@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Camera, Loader2, Check, Sparkles, ScanLine, Upload as UploadIcon, RotateCcw, X, Image as ImageIcon } from "lucide-react";
+import { Camera, Loader2, Check, Sparkles, ScanLine, Upload as UploadIcon, RotateCcw, X, Image as ImageIcon, Smartphone, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -19,8 +19,9 @@ interface AITagResult {
   vibes: GarmentVibe[];
 }
 
-type Mode = "choose-mode" | "single" | "batch";
+type Mode = "choose-mode" | "single" | "batch" | "screenshot";
 type SingleStep = "choose" | "preview" | "tagging" | "mannequin" | "review";
+type ScreenshotStep = "choose" | "extracting" | "review";
 type BatchStep = "viewfinder" | "scanning" | "review";
 
 export default function UploadPage() {
@@ -44,6 +45,10 @@ export default function UploadPage() {
   const [detectedGarments, setDetectedGarments] = useState<DetectedGarment[]>([]);
   const [batchSaving, setBatchSaving] = useState(false);
 
+  // --- Screenshot sync state ---
+  const [screenshotStep, setScreenshotStep] = useState<ScreenshotStep>("choose");
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const [screenshotTags, setScreenshotTags] = useState<(AITagResult & { price?: number; description?: string }) | null>(null);
   // --- Camera state ---
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -56,6 +61,7 @@ export default function UploadPage() {
     setMode("choose-mode");
     setSingleStep("choose");
     setBatchStep("viewfinder");
+    setScreenshotStep("choose");
     setImageFile(null);
     setImagePreview(null);
     setProcessedImage(null);
@@ -63,6 +69,8 @@ export default function UploadPage() {
     setPrice("");
     setBatchImage(null);
     setDetectedGarments([]);
+    setScreenshotPreview(null);
+    setScreenshotTags(null);
   };
 
   // ——— Camera Logic ———
@@ -309,6 +317,74 @@ export default function UploadPage() {
     }
   };
 
+  // ——— Screenshot Sync Logic ———
+  const handleScreenshotSelect = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      setScreenshotPreview(base64);
+      setScreenshotStep("extracting");
+      runScreenshotSync(base64);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const runScreenshotSync = async (base64: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("screenshot-sync", {
+        body: { imageBase64: base64 },
+      });
+      if (error) throw error;
+
+      setScreenshotTags({
+        name: data.name || "New Garment",
+        category: data.category || "tops",
+        color: data.color || "Unknown",
+        material: data.material || "Unknown",
+        brand: data.brand || "",
+        vibes: data.vibes || ["casual"],
+        price: data.price,
+        description: data.description,
+      });
+      if (data.price) setPrice(String(data.price));
+      setScreenshotStep("review");
+    } catch (err: any) {
+      toast.error("Screenshot extraction failed: " + err.message);
+      setScreenshotStep("choose");
+    }
+  };
+
+  const handleScreenshotSave = async () => {
+    if (!user || !screenshotTags) return;
+    setLoading(true);
+    try {
+      // Upload the screenshot as the garment image
+      const blob = await fetch(screenshotPreview!).then((r) => r.blob());
+      const filePath = `${user.id}/${crypto.randomUUID()}.jpg`;
+      await supabase.storage.from("garment-images").upload(filePath, blob, { contentType: "image/jpeg" });
+      const { data: urlData } = supabase.storage.from("garment-images").getPublicUrl(filePath);
+
+      const { error } = await (supabase as any).from("garments").insert({
+        user_id: user.id,
+        image_url: urlData.publicUrl,
+        name: screenshotTags.name,
+        category: screenshotTags.category,
+        color: screenshotTags.color,
+        material: screenshotTags.material,
+        brand: screenshotTags.brand,
+        vibes: screenshotTags.vibes,
+        price: price ? parseFloat(price) : null,
+      });
+      if (error) throw error;
+      toast.success("Garment synced to your closet");
+      navigate("/");
+    } catch (err: any) {
+      toast.error("Failed to save: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleShutterPress = () => {
     const frame = captureFrame();
     if (frame) {
@@ -343,31 +419,44 @@ export default function UploadPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
             transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="grid grid-cols-2 gap-3"
+            className="grid grid-cols-3 gap-3"
           >
             <button
               onClick={() => setMode("single")}
-              className="group surface-elevated rounded-sm p-6 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-foreground/20 transition-all active:scale-[0.97]"
+              className="group surface-elevated rounded-sm p-5 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-foreground/20 transition-all active:scale-[0.97]"
             >
-              <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center group-hover:bg-muted transition-colors">
-                <Camera className="w-6 h-6 text-muted-foreground" />
+              <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center group-hover:bg-muted transition-colors">
+                <Camera className="w-5 h-5 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-sans font-medium">Single Item</p>
-                <p className="text-[10px] text-muted-foreground font-sans mt-0.5">Upload one garment</p>
+                <p className="text-xs font-sans font-medium">Single Item</p>
+                <p className="text-[9px] text-muted-foreground font-sans mt-0.5">Upload one</p>
               </div>
             </button>
 
             <button
               onClick={() => setMode("batch")}
-              className="group surface-elevated rounded-sm p-6 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-accent/40 transition-all active:scale-[0.97]"
+              className="group surface-elevated rounded-sm p-5 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-accent/40 transition-all active:scale-[0.97]"
             >
-              <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/15 transition-colors">
-                <ScanLine className="w-6 h-6 text-accent" />
+              <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/15 transition-colors">
+                <ScanLine className="w-5 h-5 text-accent" />
               </div>
               <div>
-                <p className="text-sm font-sans font-medium">Aura Lens</p>
-                <p className="text-[10px] text-muted-foreground font-sans mt-0.5">Live camera scan</p>
+                <p className="text-xs font-sans font-medium">Aura Lens</p>
+                <p className="text-[9px] text-muted-foreground font-sans mt-0.5">Camera scan</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setMode("screenshot")}
+              className="group surface-elevated rounded-sm p-5 flex flex-col items-center gap-3 text-center ring-1 ring-border hover:ring-primary/40 transition-all active:scale-[0.97]"
+            >
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+                <Receipt className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs font-sans font-medium">Screenshot</p>
+                <p className="text-[9px] text-muted-foreground font-sans mt-0.5">Sync a purchase</p>
               </div>
             </button>
           </motion.div>
@@ -700,6 +789,135 @@ export default function UploadPage() {
             saving={batchSaving}
           />
         )}
+
+        {/* ——— Screenshot: Choose File ——— */}
+        {mode === "screenshot" && screenshotStep === "choose" && (
+          <motion.div
+            key="screenshot-choose"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <div
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith("image/")) handleScreenshotSelect(file);
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              className="border-2 border-dashed border-primary/30 rounded-sm aspect-[3/4] flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-primary/50 transition-colors group bg-primary/[0.02]"
+              onClick={() => document.getElementById("screenshot-input")?.click()}
+            >
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+                <Receipt className="w-7 h-7 text-primary" />
+              </div>
+              <div className="text-center px-6">
+                <p className="text-sm font-sans font-medium">Paste or upload a screenshot</p>
+                <p className="text-xs text-muted-foreground font-sans mt-1">
+                  Product page, receipt, or order confirmation
+                </p>
+                <p className="text-[10px] text-muted-foreground/60 font-sans mt-2">
+                  Zara · H&M · ASOS · Nike · any store
+                </p>
+              </div>
+            </div>
+            <input
+              id="screenshot-input"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleScreenshotSelect(file);
+              }}
+            />
+            <button onClick={resetAll} className="w-full text-sm text-muted-foreground font-sans hover:text-foreground transition-colors py-3 mt-2">
+              ← Back
+            </button>
+          </motion.div>
+        )}
+
+        {/* ——— Screenshot: Extracting ——— */}
+        {mode === "screenshot" && screenshotStep === "extracting" && (
+          <motion.div
+            key="screenshot-extracting"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col items-center justify-center py-20 gap-4"
+          >
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <Receipt className="w-7 h-7 text-primary" />
+              </div>
+              <Loader2 className="absolute inset-0 w-16 h-16 animate-spin text-primary/30" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-sans font-medium">Reading your screenshot</p>
+              <p className="text-xs text-muted-foreground font-sans mt-1">Extracting product name, brand, price & details...</p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ——— Screenshot: Review ——— */}
+        {mode === "screenshot" && screenshotStep === "review" && screenshotTags && (
+          <motion.div
+            key="screenshot-review"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-6"
+          >
+            {screenshotPreview && (
+              <div className="w-full max-h-48 rounded-sm overflow-hidden bg-muted">
+                <img src={screenshotPreview} alt="Screenshot" className="w-full h-full object-contain" />
+              </div>
+            )}
+
+            {screenshotTags.description && (
+              <p className="text-xs text-muted-foreground font-sans italic px-1">"{screenshotTags.description}"</p>
+            )}
+
+            <div className="surface-elevated rounded-sm p-5 space-y-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Check className="w-4 h-4 text-green-600" />
+                <p className="text-sm font-sans font-medium">Product Extracted</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <TagField label="Name" value={screenshotTags.name} onChange={(v) => setScreenshotTags({ ...screenshotTags, name: v })} />
+                <TagField label="Brand" value={screenshotTags.brand} onChange={(v) => setScreenshotTags({ ...screenshotTags, brand: v })} />
+                <TagField label="Category" value={screenshotTags.category} onChange={(v) => setScreenshotTags({ ...screenshotTags, category: v as any })} />
+                <TagField label="Color" value={screenshotTags.color} onChange={(v) => setScreenshotTags({ ...screenshotTags, color: v })} />
+                <TagField label="Material" value={screenshotTags.material} onChange={(v) => setScreenshotTags({ ...screenshotTags, material: v })} />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-sans mb-2 uppercase tracking-wider">Vibes</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {screenshotTags.vibes.map((vibe) => (
+                    <span key={vibe} className="tag-pill">{vibe.replace("_", " ")}</span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-sans mb-2 uppercase tracking-wider">Price</p>
+                <Input type="number" step="0.01" placeholder="$0.00" value={price} onChange={(e) => setPrice(e.target.value)} className="h-10 bg-background border-border" />
+              </div>
+            </div>
+
+            <Button onClick={handleScreenshotSave} disabled={loading} className="w-full h-12 bg-primary text-primary-foreground active:scale-[0.98] transition-transform">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4 mr-2" />Sync to Closet</>}
+            </Button>
+            <button
+              onClick={() => { setScreenshotStep("choose"); setScreenshotPreview(null); setScreenshotTags(null); setPrice(""); }}
+              className="w-full text-sm text-muted-foreground font-sans hover:text-foreground transition-colors py-2"
+            >
+              Try a different screenshot
+            </button>
+          </motion.div>
+        )}
+
       </AnimatePresence>
     </div>
   );
