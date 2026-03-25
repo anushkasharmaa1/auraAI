@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Camera, Loader2, Check, Sparkles, ScanLine, Upload as UploadIcon, RotateCcw, X, Image as ImageIcon } from "lucide-react";
+import { Camera, Loader2, Check, Sparkles, ScanLine, Upload as UploadIcon, RotateCcw, X, Image as ImageIcon, Smartphone, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -19,8 +19,9 @@ interface AITagResult {
   vibes: GarmentVibe[];
 }
 
-type Mode = "choose-mode" | "single" | "batch";
+type Mode = "choose-mode" | "single" | "batch" | "screenshot";
 type SingleStep = "choose" | "preview" | "tagging" | "mannequin" | "review";
+type ScreenshotStep = "choose" | "extracting" | "review";
 type BatchStep = "viewfinder" | "scanning" | "review";
 
 export default function UploadPage() {
