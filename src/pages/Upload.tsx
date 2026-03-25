@@ -789,6 +789,134 @@ export default function UploadPage() {
             saving={batchSaving}
           />
         )}
+
+        {/* ——— Screenshot: Choose File ——— */}
+        {mode === "screenshot" && screenshotStep === "choose" && (
+          <motion.div
+            key="screenshot-choose"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <div
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith("image/")) handleScreenshotSelect(file);
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              className="border-2 border-dashed border-primary/30 rounded-sm aspect-[3/4] flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-primary/50 transition-colors group bg-primary/[0.02]"
+              onClick={() => document.getElementById("screenshot-input")?.click()}
+            >
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+                <Receipt className="w-7 h-7 text-primary" />
+              </div>
+              <div className="text-center px-6">
+                <p className="text-sm font-sans font-medium">Paste or upload a screenshot</p>
+                <p className="text-xs text-muted-foreground font-sans mt-1">
+                  Product page, receipt, or order confirmation
+                </p>
+                <p className="text-[10px] text-muted-foreground/60 font-sans mt-2">
+                  Zara · H&M · ASOS · Nike · any store
+                </p>
+              </div>
+            </div>
+            <input
+              id="screenshot-input"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleScreenshotSelect(file);
+              }}
+            />
+            <button onClick={resetAll} className="w-full text-sm text-muted-foreground font-sans hover:text-foreground transition-colors py-3 mt-2">
+              ← Back
+            </button>
+          </motion.div>
+        )}
+
+        {/* ——— Screenshot: Extracting ——— */}
+        {mode === "screenshot" && screenshotStep === "extracting" && (
+          <motion.div
+            key="screenshot-extracting"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-col items-center justify-center py-20 gap-4"
+          >
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <Receipt className="w-7 h-7 text-primary" />
+              </div>
+              <Loader2 className="absolute inset-0 w-16 h-16 animate-spin text-primary/30" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-sans font-medium">Reading your screenshot</p>
+              <p className="text-xs text-muted-foreground font-sans mt-1">Extracting product name, brand, price & details...</p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ——— Screenshot: Review ——— */}
+        {mode === "screenshot" && screenshotStep === "review" && screenshotTags && (
+          <motion.div
+            key="screenshot-review"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-6"
+          >
+            {screenshotPreview && (
+              <div className="w-full max-h-48 rounded-sm overflow-hidden bg-muted">
+                <img src={screenshotPreview} alt="Screenshot" className="w-full h-full object-contain" />
+              </div>
+            )}
+
+            {screenshotTags.description && (
+              <p className="text-xs text-muted-foreground font-sans italic px-1">"{screenshotTags.description}"</p>
+            )}
+
+            <div className="surface-elevated rounded-sm p-5 space-y-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Check className="w-4 h-4 text-green-600" />
+                <p className="text-sm font-sans font-medium">Product Extracted</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <TagField label="Name" value={screenshotTags.name} onChange={(v) => setScreenshotTags({ ...screenshotTags, name: v })} />
+                <TagField label="Brand" value={screenshotTags.brand} onChange={(v) => setScreenshotTags({ ...screenshotTags, brand: v })} />
+                <TagField label="Category" value={screenshotTags.category} onChange={(v) => setScreenshotTags({ ...screenshotTags, category: v as any })} />
+                <TagField label="Color" value={screenshotTags.color} onChange={(v) => setScreenshotTags({ ...screenshotTags, color: v })} />
+                <TagField label="Material" value={screenshotTags.material} onChange={(v) => setScreenshotTags({ ...screenshotTags, material: v })} />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-sans mb-2 uppercase tracking-wider">Vibes</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {screenshotTags.vibes.map((vibe) => (
+                    <span key={vibe} className="tag-pill">{vibe.replace("_", " ")}</span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-sans mb-2 uppercase tracking-wider">Price</p>
+                <Input type="number" step="0.01" placeholder="$0.00" value={price} onChange={(e) => setPrice(e.target.value)} className="h-10 bg-background border-border" />
+              </div>
+            </div>
+
+            <Button onClick={handleScreenshotSave} disabled={loading} className="w-full h-12 bg-primary text-primary-foreground active:scale-[0.98] transition-transform">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4 mr-2" />Sync to Closet</>}
+            </Button>
+            <button
+              onClick={() => { setScreenshotStep("choose"); setScreenshotPreview(null); setScreenshotTags(null); setPrice(""); }}
+              className="w-full text-sm text-muted-foreground font-sans hover:text-foreground transition-colors py-2"
+            >
+              Try a different screenshot
+            </button>
+          </motion.div>
+        )
       </AnimatePresence>
     </div>
   );
