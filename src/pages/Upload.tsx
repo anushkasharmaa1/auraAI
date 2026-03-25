@@ -45,6 +45,10 @@ export default function UploadPage() {
   const [detectedGarments, setDetectedGarments] = useState<DetectedGarment[]>([]);
   const [batchSaving, setBatchSaving] = useState(false);
 
+  // --- Screenshot sync state ---
+  const [screenshotStep, setScreenshotStep] = useState<ScreenshotStep>("choose");
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const [screenshotTags, setScreenshotTags] = useState<(AITagResult & { price?: number; description?: string }) | null>(null);
   // --- Camera state ---
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
